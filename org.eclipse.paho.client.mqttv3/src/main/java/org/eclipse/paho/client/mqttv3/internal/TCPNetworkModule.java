@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ConnectException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
@@ -66,17 +67,36 @@ public class TCPNetworkModule implements NetworkModule {
 	 */
 	public void start() throws IOException, MqttException {
 		final String methodName = "start";
+		log.fine(CLASS_NAME,methodName, "252", new Object[] {host, Integer.valueOf(port), Long.valueOf(conTimeout*1000)});
+		InetAddress[] resolvedList = InetAddress.getAllByName(host);
+		boolean connected = false;
+		MqttException lastException = null;
+		for (InetAddress resolved: resolvedList) {
+			try {
+				start(resolved);
+				connected = true;
+				break;
+			} catch (MqttException e) {
+				// If tcp rst received, ConnectionException will be thrown immediate.
+				lastException = e;
+			}
+		}
+		if (!connected && lastException != null) {
+			log.fine(CLASS_NAME,methodName,"250",null,lastException);
+			throw lastException;
+		}
+	}
+
+	private void start(InetAddress resolvedHost) throws IOException, MqttException {
 		try {
 			// @TRACE 252=connect to host {0} port {1} timeout {2}
-			log.fine(CLASS_NAME,methodName, "252", new Object[] {host, Integer.valueOf(port), Long.valueOf(conTimeout*1000)});
-			SocketAddress sockaddr = new InetSocketAddress(host, port);
+			SocketAddress sockaddr = new InetSocketAddress(resolvedHost, port);
 			socket = factory.createSocket();
 			socket.connect(sockaddr, conTimeout*1000);
 			socket.setSoTimeout(1000);
 		}
 		catch (ConnectException ex) {
 			//@TRACE 250=Failed to create TCP socket
-			log.fine(CLASS_NAME,methodName,"250",null,ex);
 			throw new MqttException(MqttException.REASON_CODE_SERVER_CONNECT_ERROR, ex);
 		}
 	}
